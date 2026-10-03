@@ -30,7 +30,6 @@ log = logging.getLogger("ffbot")
 
 USER_TOKENS = {}
 AWAITING_TOKEN = set()
-# maps open_id -> user_id so /MajorLogin can find the right stored token
 OPENID_TO_USER = {}
 
 
@@ -374,7 +373,7 @@ async def on_menu_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             "• ᴘʏᴛʜᴏɴ 3.11\n"
             "• ᴘʏᴛʜᴏɴ-ᴛᴇʟᴇɢʀᴀᴍ-ʙᴏᴛ 21.6\n"
             "• ɢᴀʀᴇɴᴀ ᴍᴀᴊᴏʀ ʟᴏɢɪɴ ᴘʀᴏᴛᴏᴄᴏʟ\n"
-            "• ᴘʀᴏᴛᴏʙᴜꜰ 5.28.3\n\n"
+            "• ᴘʀᴏᴛᴏʙᴜꜰ 3.20.3\n\n"
             f"_{contact_footer()}_"
         )
         await q.message.edit_text(
@@ -404,7 +403,12 @@ async def on_verify_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 def build_app():
-    app = Application.builder().token(BOT_TOKEN).build()
+    app = (
+        Application.builder()
+        .token(BOT_TOKEN)
+        .updater(None)
+        .build()
+    )
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("login", login_cmd))
