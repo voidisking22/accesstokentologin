@@ -3,7 +3,7 @@ import os
 import logging
 import asyncio
 from dotenv import load_dotenv
-from flask import Flask, request, abort
+from flask import Flask, request, abort, Response
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import (
@@ -18,7 +18,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_IDS = [int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()]
 CONTACT_1 = os.getenv("CONTACT_1", "@voidisking")
 CONTACT_2 = os.getenv("CONTACT_2", "@lordofzone")
-SERVER_URL = os.getenv("SERVER_URL", "http://0.0.0.0:5030/")
+SERVER_URL = os.getenv("SERVER_URL", "")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")
 PORT = int(os.getenv("PORT", 8080))
 
@@ -30,6 +30,8 @@ log = logging.getLogger("ffbot")
 
 USER_TOKENS = {}
 AWAITING_TOKEN = set()
+# maps open_id -> user_id so /MajorLogin can find the right stored token
+OPENID_TO_USER = {}
 
 
 def contact_footer():
@@ -160,6 +162,7 @@ async def _validate_and_reply(update: Update, ctx: ContextTypes.DEFAULT_TYPE, to
         )
         return
     USER_TOKENS[update.effective_user.id] = token
+    OPENID_TO_USER[open_id] = update.effective_user.id
     AWAITING_TOKEN.discard(update.effective_user.id)
     valid_text = (
         "✅ *ᴛᴏᴋᴇɴ ᴠᴀʟɪᴅᴀᴛᴇᴅ.*\n\n"
@@ -250,6 +253,7 @@ async def jwt_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         acc_uid, region, nickname, platform = ff_core.fEtChAcCoUnTiNfO(token)
         open_id = ff_core.iNsPeCtToKeN(token)
+        OPENID_TO_USER[open_id] = uid
         base = {"4": "Free Fire", "5": 1, "8": "android", "21": "en"}
         raw = ff_core.gEnErAtEmAjOrLoGiNrEsP(token, open_id, base, platform)
         out_path = f"/tmp/jwt_{uid}.bin"
@@ -419,6 +423,13 @@ loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 loop.run_until_complete(PTB_APP.initialize())
 loop.run_until_complete(PTB_APP.start())
+loop.run_until_complete(
+    PTB_APP.bot.set_webhook(
+        url=f"{WEBHOOK_URL.rstrip('/')}/webhook/{BOT_TOKEN}",
+        drop_pending_updates=True
+    )
+)
+log.info("webhook set to %s", WEBHOOK_URL)
 
 
 def process_update_sync(update_dict):
@@ -454,16 +465,45 @@ def webhook():
     return "ok", 200
 
 
+@flask_app.route("/Ping", methods=["GET", "POST"])
+def ping_route():
+    return Response(b"", status=200, mimetype="application/octet-stream")
+
+
+@flask_app.route("/MajorLogin", methods=["POST"])
+def major_login_route():
+    body = request.get_data()
+    try:
+        decrypted = ff_core.dEcRyPtDaTa(body)
+        decoded = ff_core.pRoToBuFdEcOdE(decrypted)
+    except Exception as e:
+        log.warning("MajorLogin decrypt/parse failed: %s", e)
+        return Response(b"", status=500, mimetype="application/octet-stream")
+
+    access_token = decoded.get("29") or decoded.get(29) or ""
+    if isinstance(access_token, bytes):
+        access_token = access_token.decode("utf-8", errors="ignore")
+
+    user_id = None
+    open_id = None
+    for oid, uid in OPENID_TO_USER.items():
+        if USER_TOKENS.get(uid):
+            user_id = uid
+            open_id = oid
+            break
+
+    if not user_id:
+        log.warning("MajorLogin: no bound user session")
+        return Response(b"", status=500, mimetype="application/octet-stream")
+
+    token = USER_TOKENS[user_id]
+    try:
+        raw = ff_core.gEnErAtEmAjOrLoGiNrEsP(token, open_id, decoded, None)
+        return Response(raw, status=200, mimetype="application/octet-stream")
+    except Exception as e:
+        log.warning("MajorLogin generate failed: %s", e)
+        return Response(b"", status=500, mimetype="application/octet-stream")
+
+
 if __name__ == "__main__":
-    if WEBHOOK_URL:
-        try:
-            loop.run_until_complete(
-                PTB_APP.bot.set_webhook(
-                    url=f"{WEBHOOK_URL.rstrip('/')}/webhook/{BOT_TOKEN}",
-                    drop_pending_updates=True
-                )
-            )
-            log.info("webhook set to %s", WEBHOOK_URL)
-        except Exception as e:
-            log.warning("could not set webhook: %s", e)
     flask_app.run(host="0.0.0.0", port=PORT)
