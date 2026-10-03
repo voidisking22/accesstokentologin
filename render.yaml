@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: accesstokentologin
+    runtime: python
+    plan: free
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt && pip install --no-deps blackboxprotobuf==1.0.1
+    startCommand: gunicorn web:flask_app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 120
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_IDS
+        value: "8853790254"
+      - key: CONTACT_1
+        value: "@voidisking"
+      - key: CONTACT_2
+        value: "@lordofzone"
+      - key: WEBHOOK_URL
+        value: "https://accesstokentologin-3fst.onrender.com"
+      - key: SERVER_URL
+        value: "https://accesstokentologin-3fst.onrender.com/"
+      - key: PYTHON_VERSION
+        value: "3.11.9"
