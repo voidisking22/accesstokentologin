@@ -3,7 +3,7 @@ import os
 import logging
 import asyncio
 from dotenv import load_dotenv
-from flask import Flask, request, abort, Response
+from flask import Flask, request, Response
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import (
@@ -75,8 +75,11 @@ async def gate(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> bool:
 
 
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    log.info("start handler entered for user %s", update.effective_user.id)
     if not await gate(update, ctx):
+        log.info("gate blocked user %s", update.effective_user.id)
         return
+    log.info("gate passed for user %s", update.effective_user.id)
     name = update.effective_user.first_name or "ᴛʀᴀɪɴᴇʀ"
     text = (
         f"👋 ʜᴇʏ *{name}*,\n\n"
@@ -86,9 +89,13 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "*ᴛᴀᴘ ᴀ ʙᴜᴛᴛᴏɴ ᴛᴏ ʙᴇɢɪɴ.* 👇\n\n"
         f"_{contact_footer()}_"
     )
-    await update.message.reply_text(
-        text, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu_keyboard()
-    )
+    try:
+        await update.message.reply_text(
+            text, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu_keyboard()
+        )
+        log.info("start reply sent to %s", update.effective_user.id)
+    except Exception as e:
+        log.exception("start reply failed: %s", e)
 
 
 async def help_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -459,11 +466,12 @@ def healthz():
 
 @flask_app.route(f"/webhook/{BOT_TOKEN}", methods=["POST"])
 def webhook():
-    if request.headers.get("content-type") != "application/json":
-        abort(403)
+    log.info("webhook hit, content-type=%s", request.headers.get("content-type"))
     data = request.get_json(force=True)
+    log.info("update payload: %s", data)
     try:
         process_update_sync(data)
+        log.info("update processed")
     except Exception as e:
         log.exception("update processing failed: %s", e)
     return "ok", 200
@@ -479,14 +487,10 @@ def major_login_route():
     body = request.get_data()
     try:
         decrypted = ff_core.dEcRyPtDaTa(body)
-        decoded = ff_core.pRoToBuFdEcOdE(decrypted)
+        decoded = ff_core.pRoFuFdEcOdE(decrypted)
     except Exception as e:
         log.warning("MajorLogin decrypt/parse failed: %s", e)
         return Response(b"", status=500, mimetype="application/octet-stream")
-
-    access_token = decoded.get("29") or decoded.get(29) or ""
-    if isinstance(access_token, bytes):
-        access_token = access_token.decode("utf-8", errors="ignore")
 
     user_id = None
     open_id = None
